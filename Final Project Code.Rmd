@@ -1,0 +1,318 @@
+---
+title: "Final Project"
+author: "Mason Quicke"
+subtitle: MGSC 310
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+
+# Please leave this code chunk as is. It makes some slight formatting changes to alter the output to be more aesthetically pleasing. 
+
+library(knitr)
+
+# Change the number in set seed to your own favorite number
+set.seed(1818)
+options(width=70)
+options(scipen=99)
+
+
+# this sets text outputted in code chunks to small
+opts_chunk$set(tidy.opts=list(width.wrap=50),tidy=TRUE, size = "vsmall")  
+opts_chunk$set(message = FALSE,                                          
+               warning = FALSE,
+               # "caching" stores objects in code chunks and only rewrites if you change things
+               cache = FALSE,                               
+               # automatically downloads dependency files
+               autodep = TRUE,
+               # 
+               cache.comments = FALSE,
+               # 
+               collapse = TRUE,
+               # change fig.width and fig.height to change the code height and width by default
+               fig.width = 5.5,  
+               fig.height = 4.5,
+               fig.align='center')
+
+
+```
+
+
+
+
+```{r setup-2}
+
+sessionInfo()
+getwd()
+set.seed(1800)
+library('tidyverse')
+library('rsample')
+library('ggplot2')
+
+AirlinePrices <- AirlinePrices %>%
+  mutate(Fare_USD = Fare * 0.012224)
+
+#AirlinePrices <- AirlinePrices %>% select(-Flight_code)
+#AirlinePrices <- AirlinePrices %>% select(-Date_of_journey)
+
+AirlinePrices$Airline <- as.factor(AirlinePrices$Airline)
+AirlinePrices$Journey_day <- as.factor(AirlinePrices$Journey_day)
+AirlinePrices$Class <- as.factor(AirlinePrices$Class)
+AirlinePrices$Source <- as.factor(AirlinePrices$Source)
+AirlinePrices$Departure <- as.factor(AirlinePrices$Departure)
+AirlinePrices$Total_stops <- as.factor(AirlinePrices$Total_stops)
+AirlinePrices$Arrival <- as.factor(AirlinePrices$Arrival)
+AirlinePrices$Destination <- as.factor(AirlinePrices$Destination)
+
+#Split 80/20
+AirlinePrices_split <- initial_split(AirlinePrices, prop = 0.8)
+AirlinePrices_train <- training(AirlinePrices_split)
+AirlinePrices_test <- testing(AirlinePrices_split)
+
+dim(AirlinePrices_train)
+dim(AirlinePrices_test)
+
+#Linear Regression
+linear_model <- lm(Fare_USD ~ Journey_day + Airline + Class + Source + Departure + Total_stops + Arrival + Destination + Duration_in_hours + Days_left, data = AirlinePrices_train)
+summary(linear_model)
+
+library('sjPlot')
+tab_model(linear_model)
+plot_model(linear_model)
+
+# Predicted True Plot
+preds_train <- predict(linear_model, newdata = AirlinePrices_train)
+preds_test <- predict(linear_model, newdata = AirlinePrices_test)
+
+results_train <- data.frame(
+  True = AirlinePrices_train$Fare_USD,
+  Predicted = preds_train,
+  Dataset = "Training"
+)
+results_test <- data.frame(
+  True = AirlinePrices_test$Fare_USD,
+  Predicted = preds_test,
+  Dataset = "Testing"
+)
+
+library(ggplot2)
+results_combined <- rbind(results_train, results_test)
+ggplot(results_train, aes(x = True, y = Predicted)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Predicted vs. True Values (Training Set)",
+    x = "True Fare",
+    y = "Predicted Fare"
+  )
+
+ggplot(results_test, aes(x = True, y = Predicted)) +
+  geom_point(alpha = 0.6, color = "red") +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  theme_minimal() +
+  labs(
+    title = "Predicted vs. True Values (Testing Set)",
+    x = "True Fare",
+    y = "Predicted Fare"
+  )
+
+# RMSE and MEDAE
+library(Metrics) # For RMSE
+library(dplyr)   # For data manipulation
+
+preds_train <- predict(linear_model, newdata = AirlinePrices_train)
+preds_test <- predict(linear_model, newdata = AirlinePrices_test)
+
+rmse_train <- rmse(AirlinePrices_train$Fare_USD, preds_train)
+rmse_test <- rmse(AirlinePrices_test$Fare_USD, preds_test)
+
+medae <- function(true, predicted) {
+  median(abs(true - predicted))
+}
+
+medae_train <- medae(AirlinePrices_train$Fare_USD, preds_train)
+medae_test <- medae(AirlinePrices_test$Fare_USD, preds_test)
+
+cat("Training RMSE:", rmse_train, "\n")
+cat("Testing RMSE:", rmse_test, "\n")
+cat("Training MEDAE:", medae_train, "\n")
+cat("Testing MEDAE:", medae_test, "\n")
+
+# MAE Linear
+mae <- function(true, predicted) {
+  mean(abs(true - predicted))
+}
+
+preds_train_linear <- predict(linear_model, newdata = AirlinePrices_train)
+preds_test_linear <- predict(linear_model, newdata = AirlinePrices_test)
+
+mae_train_linear <- mae(AirlinePrices_train$Fare_USD, preds_train_linear)
+mae_test_linear <- mae(AirlinePrices_test$Fare_USD, preds_test_linear)
+
+cat("Linear Model MAE (Training):", mae_train_linear, "\n")
+cat("Linear Model MAE (Testing):", mae_test_linear, "\n")
+
+
+# Range of Fares
+max_fare <- max(AirlinePrices$Fare_USD, na.rm = TRUE)
+min_fare <- min(AirlinePrices$Fare_USD, na.rm = TRUE)
+
+cat("Maximum Fare:", max_fare, "\n")
+cat("Minimum Fare:", min_fare, "\n")
+
+# Lasso Model
+library(glmnetUtils)
+lasso_model <- cv.glmnet(Fare_USD ~ Journey_day + Airline + Class + Source + Departure + Total_stops + Arrival + Destination + Duration_in_hours + Days_left, data = AirlinePrices_train, alpha = 1)
+plot(lasso_model)
+print(lasso_model$lambda.min)
+print(lasso_model$lambda.1se)
+
+library(tibble)
+lasso_model <- cv.glmnet(
+  Fare_USD ~ Journey_day + Airline + Class + Source + Departure + Total_stops + Arrival + Destination + Duration_in_hours + Days_left,
+  data = AirlinePrices_train,
+  alpha = 1
+)
+
+plot(lasso_model)
+cat("Optimal Lambda (Min):", lasso_model$lambda.min, "\n")
+cat("Optimal Lambda (1-SE):", lasso_model$lambda.1se, "\n")
+lasso_min_coefs <- coef(lasso_model, s = lasso_model$lambda.min)
+lasso_1se_coefs <- coef(lasso_model, s = lasso_model$lambda.1se)
+
+lasso_coefs <- tibble(
+  Variable = rownames(lasso_min_coefs),
+  Coefficient_Lambda_Min = as.vector(lasso_min_coefs),
+  Coefficient_Lambda_1SE = as.vector(lasso_1se_coefs)
+) %>%
+  mutate(
+    Coefficient_Lambda_Min = round(Coefficient_Lambda_Min, 3),
+    Coefficient_Lambda_1SE = round(Coefficient_Lambda_1SE, 3)
+  )
+
+print(lasso_coefs, n = 48)
+
+# Calculating Lasso R-Squared
+preds_train <- predict(lasso_model, s = lasso_model$lambda.min, newdata = AirlinePrices_train)
+preds_test <- predict(lasso_model, s = lasso_model$lambda.min, newdata = AirlinePrices_test)
+
+y_train <- AirlinePrices_train$Fare_USD
+y_test <- AirlinePrices_test$Fare_USD
+
+sst_train <- sum((y_train - mean(y_train))^2)
+ssr_train <- sum((y_train - preds_train)^2)    
+r_squared_train <- 1 - (ssr_train / sst_train)
+
+sst_test <- sum((y_test - mean(y_test))^2)  
+ssr_test <- sum((y_test - preds_test)^2)    
+r_squared_test <- 1 - (ssr_test / sst_test)
+
+cat("R-squared for Training Set:", r_squared_train, "\n")
+cat("R-squared for Testing Set:", r_squared_test, "\n")
+
+# Lambda
+enet_mod <- cva.glmnet(Fare_USD ~ Journey_day + Airline + Class + Source + Departure + Total_stops + Arrival + Destination + Duration_in_hours + Days_left, data = AirlinePrices_train, alpha = seq(0,1, by = 0.1))
+print(enet_mod)
+plot(enet_mod)
+
+# Selecting Correct Alpha
+minlossplot(enet_mod, 
+            cv.type = "min")
+
+
+
+# Bar Chart
+flights_per_airline <- AirlinePrices %>%
+  count(Airline, name = "Flight_Count")
+
+ggplot(flights_per_airline, aes(x = reorder(Airline, -Flight_Count), y = Flight_Count)) +
+  geom_bar(stat = "identity", fill = "skyblue", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Number of Flights per Airline",
+    x = "Airline",
+    y = "Number of Flights"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+mae <- function(true, predicted) {
+  mean(abs(true - predicted))
+}
+medae <- function(true, predicted) {
+  median(abs(true - predicted))
+}
+preds_train_lasso <- predict(lasso_model, s = lasso_model$lambda.min, newdata = AirlinePrices_train)
+preds_test_lasso <- predict(lasso_model, s = lasso_model$lambda.min, newdata = AirlinePrices_test)
+
+mae_train_lasso <- mae(AirlinePrices_train$Fare_USD, preds_train_lasso)
+mae_test_lasso <- mae(AirlinePrices_test$Fare_USD, preds_test_lasso)
+
+medae_train_lasso <- medae(AirlinePrices_train$Fare_USD, preds_train_lasso)
+medae_test_lasso <- medae(AirlinePrices_test$Fare_USD, preds_test_lasso)
+
+comparison <- data.frame(
+  Metric = c("MAE", "MEDAE"),
+  Training = c(mae_train_lasso, medae_train_lasso),
+  Testing = c(mae_test_lasso, medae_test_lasso)
+)
+
+comparison_long <- comparison %>%
+  tidyr::pivot_longer(cols = c("Training", "Testing"), names_to = "Dataset", values_to = "Value")
+ggplot(comparison_long, aes(x = Metric, y = Value, fill = Dataset)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(
+    title = "Comparison of MAE and MEDAE for Lasso Model",
+    x = "Metric",
+    y = "Error Value"
+  ) +
+  scale_fill_manual(values = c("Training" = "skyblue", "Testing" = "gray")) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12)
+  )
+
+install.packages("party")
+library(party)
+control_params <- ctree_control(minbucket = 50)
+tree_mod <- ctree(Fare_USD ~ Journey_day + Airline + Class + Source +
+                    Departure + Total_stops + Arrival + Destination +
+                    Duration_in_hours + Days_left,
+                  data = AirlinePrices_train,
+                  control = control_params)
+
+
+plot(tree_mod, main = "Conditional Inference Tree for Airfare Prediction")
+
+
+
+
+
+control_params <- ctree_control(minbucket = 200, maxdepth = 3)  # You can adjust this as needed
+
+# Train the conditional inference tree model
+tree_mod <- ctree(Fare_USD ~ Journey_day + Airline + Class + Source +
+                    Departure + Total_stops + Arrival + Destination +
+                    Duration_in_hours + Days_left,
+                  data = AirlinePrices,
+                  control = control_params)
+
+# Plot the tree
+p <- plot(tree_mod, main = "Conditional Inference Tree for Airfare Prediction")
+
+p + theme(
+  text = element_text(size = 2),           # General text size for all elements
+  axis.title = element_text(size = 2),    # Axis title size (if applicable)
+  axis.text = element_text(size = 2),      # Axis label size (if applicable)
+  plot.title = element_text(size = 2)     # Title size
+)
+
+
+
+
+```
+
